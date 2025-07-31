@@ -79,12 +79,16 @@ export default function FeedbackForm() {
         body: formData,
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Erro ao enviar feedback");
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        result = {};
       }
-
-      return response.json();
+      if (!response.ok) {
+        throw new Error(result.message || "Erro ao enviar feedback");
+      }
+      return result;
     },
     onSuccess: () => {
       const isBug = feedbackCategory === "bug";
