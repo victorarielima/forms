@@ -7,7 +7,9 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import FormData from "form-data";
-import fetch from "node-fetch";
+// Importação compatível com ESM e CommonJS
+import nodeFetch from 'node-fetch';
+const fetch: typeof nodeFetch = typeof nodeFetch === 'function' ? nodeFetch : (global.fetch as any);
 
 // Configure multer for file uploads
 const uploadDir = path.join(process.cwd(), 'uploads');
