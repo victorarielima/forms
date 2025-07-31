@@ -40,8 +40,7 @@ app.use((req, res, next) => {
 (async () => {
   // Checagem de variável obrigatória
   if (!process.env.DATABASE_URL) {
-    console.error("DATABASE_URL não definida. Configure nas variáveis de ambiente do Azure.");
-    process.exit(1);
+    console.warn("DATABASE_URL não definida. O app irá rodar em modo memória (sem persistência de dados).");
   }
 
   const server = await registerRoutes(app);
