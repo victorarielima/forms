@@ -84,14 +84,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         form.append('feedbackType', feedbackType);
         if (Array.isArray(files) && files.length > 0) {
           files.forEach((file) => {
-            form.append('files', fs.createReadStream(file.path), {
-              filename: file.originalname,
-              contentType: file.mimetype,
-            });
+            // Verifica se o arquivo existe antes de anexar
+            if (fs.existsSync(file.path)) {
+              form.append('files', fs.createReadStream(file.path), {
+                filename: file.originalname,
+                contentType: file.mimetype,
+              });
+            } else {
+              console.warn(`Arquivo não encontrado para anexar ao FormData: ${file.path}`);
+            }
           });
         }
         return form;
       };
+
+      // Log detalhado do FormData (campos e arquivos)
+      const logFormData = () => {
+        const form = makeFormData();
+        const fieldsLog: any = {};
+        for (const key in form._streams) {
+          fieldsLog[key] = form._streams[key];
+        }
+        console.log('FormData para envio:', fieldsLog);
+      };
+      logFormData();
 
       console.log('Enviando para webhook:', {
         companyName,
@@ -105,19 +121,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let webhookResponse;
       try {
         // Sempre crie um novo FormData para cada envio (evita conflito de stream)
+        const formProd = makeFormData();
         webhookResponse = await fetch('https://ai.brasengconsultoria.com.br/webhook/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c', {
           method: 'POST',
-          body: makeFormData(),
-          headers: makeFormData().getHeaders(),
+          body: formProd,
+          headers: formProd.getHeaders(),
         });
+
+        // Log da resposta do webhook produção
+        const prodText = await webhookResponse.text().catch(() => '');
+        console.log('Resposta webhook produção:', webhookResponse.status, prodText);
 
         if (!webhookResponse.ok) {
           console.log('Production webhook failed, trying test endpoint...');
+          const formTest = makeFormData();
           webhookResponse = await fetch('https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c', {
             method: 'POST',
-            body: makeFormData(),
-            headers: makeFormData().getHeaders(),
+            body: formTest,
+            headers: formTest.getHeaders(),
           });
+          const testText = await webhookResponse.text().catch(() => '');
+          console.log('Resposta webhook teste:', webhookResponse.status, testText);
         }
 
         // Se POST falhar, tenta GET (sem arquivos)
@@ -138,11 +162,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           webhookResponse = await fetch(getUrl, {
             method: 'GET',
           });
+          const getText = await webhookResponse.text().catch(() => '');
+          console.log('Resposta webhook GET:', webhookResponse.status, getText);
         }
 
         if (!webhookResponse.ok) {
-          const respText = await webhookResponse.text().catch(() => '');
-          console.log('Webhook response:', webhookResponse.status, respText);
+          console.log('Webhook response final:', webhookResponse.status);
         } else {
           console.log('Webhook enviado com sucesso!');
         }
