@@ -7,6 +7,8 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import FormData from "form-data";
+// @ts-ignore
+import fetch from "node-fetch";
 
 // Configure multer for file uploads
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -34,18 +36,35 @@ const upload = multer({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Submit feedback endpoint
-  app.post("/api/feedback", upload.any(), async (req, res) => {
+
+  // Use upload.fields to ensure correct parsing of files and fields
+  app.post("/api/feedback", upload.fields([{ name: 'files' }]), async (req, res) => {
     try {
-      const { companyName, description, impactLevel, feedbackType } = req.body;
-      
+      // Multer coloca campos de texto em req.body e arquivos em req.files
+      // Fallback: alguns ambientes podem colocar campos em req.body ou req.fields
+
+      // Multer coloca arquivos em req.files (objeto ou array) e campos em req.body
+      let files: any[] = [];
+      if (Array.isArray(req.files)) {
+        files = req.files;
+      } else if (req.files && typeof req.files === 'object' && req.files.files) {
+        files = req.files.files;
+      }
+      const fields = req.body || {};
+
+      const companyName = fields.companyName || '';
+      const description = fields.description || '';
+      const impactLevel = fields.impactLevel || '';
+      const feedbackType = fields.feedbackType || '';
+
       // Validate required fields
       const validationResult = insertFeedbackSchema.safeParse({
         companyName,
         description: description || undefined,
         impactLevel: impactLevel || undefined,
         feedbackType,
-        fileName: Array.isArray(req.files) && req.files.length > 0 ? req.files[0].originalname : undefined,
-        fileUrl: Array.isArray(req.files) && req.files.length > 0 ? req.files[0].filename : undefined,
+        fileName: Array.isArray(files) && files.length > 0 ? files[0].originalname : undefined,
+        fileUrl: Array.isArray(files) && files.length > 0 ? files[0].filename : undefined,
       });
 
       if (!validationResult.success) {
@@ -65,8 +84,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (impactLevel) webhookData.append('impactLevel', impactLevel);
       webhookData.append('feedbackType', feedbackType);
 
-      if (Array.isArray(req.files) && req.files.length > 0) {
-        req.files.forEach((file) => {
+      if (Array.isArray(files) && files.length > 0) {
+        files.forEach((file) => {
           webhookData.append('files', fs.createReadStream(file.path), {
             filename: file.originalname,
             contentType: file.mimetype,
