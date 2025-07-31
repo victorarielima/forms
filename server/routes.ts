@@ -6,6 +6,7 @@ import { insertFeedbackSchema } from "@shared/schema";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import FormData from "form-data";
 
 // Configure multer for file uploads
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -57,18 +58,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Store feedback locally
       const feedback = await storage.createFeedback(validationResult.data);
 
-      // Prepare data for webhook
+      // Prepare data for webhook (Node.js compatible)
       const webhookData = new FormData();
       webhookData.append('companyName', companyName);
       if (description) webhookData.append('description', description);
       if (impactLevel) webhookData.append('impactLevel', impactLevel);
       webhookData.append('feedbackType', feedbackType);
-      
+
       if (Array.isArray(req.files) && req.files.length > 0) {
-        req.files.forEach((file, index) => {
-          const fileBuffer = fs.readFileSync(file.path);
-          const blob = new Blob([fileBuffer], { type: file.mimetype });
-          webhookData.append(`files`, blob, file.originalname);
+        req.files.forEach((file) => {
+          webhookData.append('files', fs.createReadStream(file.path), {
+            filename: file.originalname,
+            contentType: file.mimetype,
+          });
         });
       }
 
@@ -78,6 +80,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let webhookResponse = await fetch('https://ai.brasengconsultoria.com.br/webhook/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c', {
           method: 'POST',
           body: webhookData,
+          headers: webhookData.getHeaders(),
         });
 
         // If production fails, try test endpoint
@@ -86,6 +89,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           webhookResponse = await fetch('https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c', {
             method: 'POST',
             body: webhookData,
+            headers: webhookData.getHeaders(),
           });
         }
 
