@@ -1,0 +1,77 @@
+:root {
+	/* Fontes */
+	--font-family: 'Open Sans', sans-serif;
+	--font-weight-normal: 400;
+	--font-weight-bold: 600;
+
+	/* Tamanhos */
+	--font-size-body: 12px;
+	--font-size-label: 14px;
+	--font-size-test-notice: 12px;
+	--font-size-input: 14px;
+	--font-size-header: 20px;
+	--font-size-paragraph: 14px;
+	--font-size-link: 12px;
+	--font-size-error: 12px;
+	--font-size-html-h1: 28px;
+	--font-size-html-h2: 20px;
+	--font-size-html-h3: 16px;
+	--font-size-html-h4: 14px;
+	--font-size-html-h5: 12px;
+	--font-size-html-h6: 10px;
+	--font-size-subheader: 14px;
+
+	/* Cores Filazero */
+	--color-primary: #7c3aed; /* Roxo vibrante */
+	--color-primary-dark: #4c1d95; /* Roxo escuro */
+	--color-primary-light: #ede9fe; /* Lilás claro */
+	--color-background: #fbfcfe;
+	--color-card-bg: #ffffff;
+	--color-card-border: #e5e5f5;
+	--color-card-shadow: rgba(124, 58, 237, 0.06);
+
+	--color-link: #7c3aed;
+	--color-header: #4c1d95;
+	--color-label: #4c1d95;
+	--color-input-border: #d9d6f3;
+	--color-input-text: #4c1d95;
+	--color-focus-border: #7c3aed;
+	--color-submit-btn-bg: #7c3aed;
+	--color-submit-btn-text: #ffffff;
+	--color-error: #d32f2f;
+	--color-required: #d32f2f;
+	--color-clear-button-bg: #a78bfa;
+	--color-html-text: #4c1d95;
+	--color-html-link: #7c3aed;
+	--color-header-subtext: #6b21a8;
+
+	/* Aviso informativo (ex: campo “nos ajude a melhorar”) */
+	--color-test-notice-text: #4c1d95;
+	--color-test-notice-bg: #f5f3ff;
+	--color-test-notice-border: #d8b4fe;
+
+	/* Bordas */
+	--border-radius-card: 8px;
+	--border-radius-input: 6px;
+	--border-radius-clear-btn: 50%;
+	--card-border-radius: 8px;
+
+	/* Espaçamento */
+	--padding-container-top: 24px;
+	--padding-card: 24px;
+	--padding-test-notice-vertical: 12px;
+	--padding-test-notice-horizontal: 24px;
+	--margin-bottom-card: 16px;
+	--padding-form-input: 12px;
+	--card-padding: 24px;
+	--card-margin-bottom: 16px;
+
+	/* Dimensões */
+	--container-width: 448px;
+	--submit-btn-height: 48px;
+	--checkbox-size: 18px;
+
+	/* Outros */
+	--box-shadow-card: 0px 4px 16px 0px var(--color-card-shadow);
+	--opacity-placeholder: 0.5;
+}

@@ -1,0 +1,213 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Shadcn Variables */
+  --background: hsl(251, 48%, 98%);
+  --foreground: hsl(271, 65.1%, 18%);
+  --muted: hsl(270, 14%, 96%);
+  --muted-foreground: hsl(271, 11.4%, 44.7%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(271, 65.1%, 18%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(271, 65.1%, 18%);
+  --border: hsl(270, 22%, 90%);
+  --input: hsl(270, 22%, 90%);
+  --primary: hsl(260, 86%, 58%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(270, 14%, 96%);
+  --secondary-foreground: hsl(271, 65.1%, 18%);
+  --accent: hsl(270, 14%, 96%);
+  --accent-foreground: hsl(271, 65.1%, 18%);
+  --destructive: hsl(0, 84.2%, 60.2%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --ring: hsl(271, 65.1%, 18%);
+  --radius: 0.5rem;
+
+  /* Filazero Brand Variables */
+  --font-family: 'Open Sans', sans-serif;
+  --font-weight-normal: 400;
+  --font-weight-bold: 600;
+  
+  /* Font Sizes */
+  --font-size-body: 12px;
+  --font-size-label: 14px;
+  --font-size-test-notice: 12px;
+  --font-size-input: 14px;
+  --font-size-header: 20px;
+  --font-size-paragraph: 14px;
+  --font-size-link: 12px;
+  --font-size-error: 12px;
+  --font-size-html-h1: 28px;
+  --font-size-html-h2: 20px;
+  --font-size-html-h3: 16px;
+  --font-size-html-h4: 14px;
+  --font-size-html-h5: 12px;
+  --font-size-html-h6: 10px;
+  --font-size-subheader: 14px;
+
+  /* Filazero Colors */
+  --color-primary: #7c3aed;
+  --color-primary-dark: #4c1d95;
+  --color-primary-light: #ede9fe;
+  --color-background: #fbfcfe;
+  --color-card-bg: #ffffff;
+  --color-card-border: #e5e5f5;
+  --color-card-shadow: rgba(124, 58, 237, 0.06);
+
+  --color-link: #7c3aed;
+  --color-header: #4c1d95;
+  --color-label: #4c1d95;
+  --color-input-border: #d9d6f3;
+  --color-input-text: #4c1d95;
+  --color-focus-border: #7c3aed;
+  --color-submit-btn-bg: #7c3aed;
+  --color-submit-btn-text: #ffffff;
+  --color-error: #d32f2f;
+  --color-required: #d32f2f;
+  --color-clear-button-bg: #a78bfa;
+  --color-html-text: #4c1d95;
+  --color-html-link: #7c3aed;
+  --color-header-subtext: #6b21a8;
+
+  /* Notice Colors */
+  --color-test-notice-text: #4c1d95;
+  --color-test-notice-bg: transparent;
+  --color-test-notice-border: transparent;
+
+  /* Borders */
+  --border-radius-card: 8px;
+  --border-radius-input: 6px;
+  --border-radius-clear-btn: 50%;
+  --card-border-radius: 8px;
+
+  /* Spacing */
+  --padding-container-top: 24px;
+  --padding-card: 24px;
+  --padding-test-notice-vertical: 12px;
+  --padding-test-notice-horizontal: 24px;
+  --margin-bottom-card: 16px;
+  --padding-form-input: 12px;
+  --card-padding: 24px;
+  --card-margin-bottom: 16px;
+
+  /* Dimensions */
+  --container-width: 448px;
+  --submit-btn-height: 48px;
+  --checkbox-size: 18px;
+
+  /* Effects */
+  --box-shadow-card: 0px 4px 16px 0px var(--color-card-shadow);
+  --opacity-placeholder: 0.5;
+}
+
+.dark {
+  --background: hsl(271, 65.1%, 18%);
+  --foreground: hsl(0, 0%, 98%);
+  --muted: hsl(271, 25%, 25%);
+  --muted-foreground: hsl(270, 5%, 64.9%);
+  --popover: hsl(271, 65.1%, 18%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --card: hsl(271, 65.1%, 18%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --border: hsl(271, 25%, 25%);
+  --input: hsl(271, 25%, 25%);
+  --primary: hsl(260, 86%, 58%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(271, 25%, 25%);
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --accent: hsl(271, 25%, 25%);
+  --accent-foreground: hsl(0, 0%, 98%);
+  --destructive: hsl(0, 62.8%, 30.6%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --ring: hsl(271, 91%, 65%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    font-family: var(--font-family);
+  }
+}
+
+@layer components {
+  .filazero-input {
+    @apply w-full px-4 py-3 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-300 bg-card text-foreground;
+  }
+
+  .filazero-button {
+    @apply w-full bg-primary text-primary-foreground py-3 px-6 rounded-lg font-semibold text-base transition-all duration-300 hover:shadow-lg focus:outline-none focus:ring-4 focus:ring-primary focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .filazero-card {
+    @apply bg-card border border-border rounded-xl shadow-lg p-6;
+  }
+
+  .form-input:focus {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(124, 58, 237, 0.15);
+  }
+
+  .file-drop-zone {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .file-drop-zone.drag-over {
+    border-color: var(--color-primary);
+    background-color: var(--color-primary-light);
+    transform: scale(1.02);
+  }
+
+  .submit-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(124, 58, 237, 0.3);
+  }
+
+  .submit-btn:active {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes bounceSubtle {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s ease-out;
+}
+
+.animate-bounce-subtle {
+  animation: bounceSubtle 0.3s ease-out;
+}
+
+.loading-spinner {
+  border: 2px solid transparent;
+  border-top: 2px solid currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}

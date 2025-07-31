@@ -1,0 +1,17 @@
+<svg width="120" height="40" viewBox="0 0 120 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#7c3aed;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#a78bfa;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Icon/Symbol -->
+  <circle cx="15" cy="20" r="8" fill="url(#logoGradient)"/>
+  <circle cx="15" cy="20" r="4" fill="#ffffff"/>
+  <path d="M8 20 L15 13 L22 20 L15 27 Z" fill="url(#logoGradient)" opacity="0.8"/>
+  
+  <!-- Text -->
+  <text x="35" y="16" font-family="Open Sans, sans-serif" font-size="14" font-weight="600" fill="#4c1d95">filazero</text>
+  <text x="35" y="30" font-family="Open Sans, sans-serif" font-size="8" font-weight="400" fill="#7c3aed" opacity="0.8">feedback platform</text>
+</svg>
