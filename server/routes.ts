@@ -7,7 +7,6 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import FormData from "form-data";
-// @ts-ignore
 import fetch from "node-fetch";
 
 // Configure multer for file uploads
