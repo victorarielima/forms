@@ -7,9 +7,6 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import FormData from "form-data";
-// Importação compatível com ESM e CommonJS
-import nodeFetch from 'node-fetch';
-const fetch: typeof nodeFetch = typeof nodeFetch === 'function' ? nodeFetch : (global.fetch as any);
 
 // Configure multer for file uploads
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -36,115 +33,180 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Test webhook endpoint for local testing
+  app.post("/api/test-webhook", upload.any(), (req, res) => {
+    console.log('=== TEST WEBHOOK RECEIVED ===');
+    console.log('Body:', req.body);
+    console.log('Files:', req.files);
+    if (Array.isArray(req.files)) {
+      req.files.forEach((file, index) => {
+        console.log(`File ${index}:`, {
+          fieldname: file.fieldname,
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size
+        });
+      });
+    }
+    res.json({ 
+      success: true, 
+      message: 'Dados recebidos com sucesso!',
+      data: req.body,
+      files: req.files?.length || 0
+    });
+  });
+
   // Submit feedback endpoint
-
-  // Use upload.fields to ensure correct parsing of files and fields
-  app.post("/api/feedback", upload.fields([{ name: 'files' }]), async (req, res) => {
+  app.post("/api/feedback", upload.any(), async (req, res) => {
     try {
-      // Parsing robusto dos arquivos enviados
-      let files: any[] = [];
-      if (Array.isArray(req.files)) {
-        files = req.files;
-      } else if (req.files && typeof req.files === 'object' && Array.isArray(req.files.files)) {
-        files = req.files.files;
-      }
-      const fields = req.body || {};
-
-      const companyName = fields.companyName || '';
-      const description = fields.description || '';
-      const impactLevel = fields.impactLevel || '';
-      const feedbackType = fields.feedbackType || '';
-
-      // Validação dos campos obrigatórios
+      console.log('=== FEEDBACK SUBMISSION DEBUG ===');
+      console.log('Request body:', req.body);
+      console.log('Request files:', req.files);
+      console.log('Request headers:', req.headers);
+      
+      const { companyName, description, impactLevel, feedbackType } = req.body;
+      
+      console.log('Extracted fields:', {
+        companyName,
+        description,
+        impactLevel,
+        feedbackType
+      });
+      
+      // Validate required fields
       const validationResult = insertFeedbackSchema.safeParse({
         companyName,
         description: description || undefined,
         impactLevel: impactLevel || undefined,
         feedbackType,
-        fileName: Array.isArray(files) && files.length > 0 ? files[0].originalname : undefined,
-        fileUrl: Array.isArray(files) && files.length > 0 ? files[0].filename : undefined,
+        fileName: Array.isArray(req.files) && req.files.length > 0 ? req.files[0].originalname : undefined,
+        fileUrl: Array.isArray(req.files) && req.files.length > 0 ? req.files[0].filename : undefined,
       });
 
       if (!validationResult.success) {
+        console.log('Validation failed:', validationResult.error.errors);
         return res.status(400).json({
           message: "Dados inválidos",
           errors: validationResult.error.errors
         });
       }
 
-      // Armazena localmente
+      console.log('Validation passed, storing feedback...');
+      // Store feedback locally
       const feedback = await storage.createFeedback(validationResult.data);
+      console.log('Feedback stored locally:', feedback);
 
-      // Prepara dados para envio ao webhook
-      const makeFormData = () => {
-        const form = new FormData();
-        form.append('companyName', companyName);
-        if (description) form.append('description', description);
-        if (impactLevel) form.append('impactLevel', impactLevel);
-        form.append('feedbackType', feedbackType);
-        if (Array.isArray(files) && files.length > 0) {
-          files.forEach((file) => {
-            // Verifica se o arquivo existe antes de anexar
-            if (fs.existsSync(file.path)) {
-              form.append('files', fs.createReadStream(file.path), {
-                filename: file.originalname,
-                contentType: file.mimetype,
-              });
-            } else {
-              console.warn(`Arquivo não encontrado para anexar ao FormData: ${file.path}`);
-            }
+      // Prepare data for webhook using form-data
+      const formData = new FormData();
+      formData.append('companyName', companyName);
+      if (description) formData.append('description', description);
+      if (impactLevel) formData.append('impactLevel', impactLevel);
+      formData.append('feedbackType', feedbackType);
+      
+      if (Array.isArray(req.files) && req.files.length > 0) {
+        console.log('Processing files for webhook...');
+        req.files.forEach((file, index) => {
+          console.log(`File ${index}:`, {
+            path: file.path,
+            originalname: file.originalname,
+            mimetype: file.mimetype,
+            size: file.size,
+            exists: fs.existsSync(file.path)
           });
-        }
-        return form;
-      };
+          
+          if (fs.existsSync(file.path)) {
+            formData.append('files', fs.createReadStream(file.path), {
+              filename: file.originalname,
+              contentType: file.mimetype,
+            });
+          } else {
+            console.error(`File does not exist: ${file.path}`);
+          }
+        });
+      }
 
-      // Log detalhado do FormData (campos e arquivos)
-      const logFormData = () => {
-        const form = makeFormData();
-        const fieldsLog: any = {};
-        for (const key in form._streams) {
-          fieldsLog[key] = form._streams[key];
-        }
-        console.log('FormData para envio:', fieldsLog);
-      };
-      logFormData();
-
-      console.log('Enviando para webhook:', {
+      console.log('Enviando dados para webhook:', {
         companyName,
         description,
         impactLevel,
         feedbackType,
-        files: Array.isArray(files) ? files.map(f => f.originalname) : files
+        filesCount: Array.isArray(req.files) ? req.files.length : 0
       });
 
-      // Envio para o webhook
-      let webhookResponse;
+      // Send to webhook - try production first
       try {
-        // Sempre crie um novo FormData para cada envio (evita conflito de stream)
-        const formProd = makeFormData();
+        let webhookResponse;
+        console.log('Attempting to send to production webhook...');
+        
+        // Try production webhook
         webhookResponse = await fetch('https://ai.brasengconsultoria.com.br/webhook/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c', {
           method: 'POST',
-          body: formProd,
-          headers: formProd.getHeaders(),
+          body: formData as any,
+          headers: {
+            ...formData.getHeaders(),
+          },
         });
 
-        // Log da resposta do webhook produção
-        const prodText = await webhookResponse.text().catch(() => '');
-        console.log('Resposta webhook produção:', webhookResponse.status, prodText);
+        let responseText = '';
+        try {
+          responseText = await webhookResponse.text();
+        } catch (readError) {
+          console.error('Error reading webhook response:', readError);
+        }
+        
+        console.log('Webhook production response:', {
+          status: webhookResponse.status,
+          statusText: webhookResponse.statusText,
+          headers: Object.fromEntries(webhookResponse.headers.entries()),
+          body: responseText
+        });
 
+        // If production fails, try test endpoint
         if (!webhookResponse.ok) {
           console.log('Production webhook failed, trying test endpoint...');
-          const formTest = makeFormData();
+          
+          // Create new FormData for test endpoint
+          const testFormData = new FormData();
+          testFormData.append('companyName', companyName);
+          if (description) testFormData.append('description', description);
+          if (impactLevel) testFormData.append('impactLevel', impactLevel);
+          testFormData.append('feedbackType', feedbackType);
+          
+          if (Array.isArray(req.files) && req.files.length > 0) {
+            req.files.forEach((file, index) => {
+              if (fs.existsSync(file.path)) {
+                testFormData.append('files', fs.createReadStream(file.path), {
+                  filename: file.originalname,
+                  contentType: file.mimetype,
+                });
+              }
+            });
+          }
+
           webhookResponse = await fetch('https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c', {
             method: 'POST',
-            body: formTest,
-            headers: formTest.getHeaders(),
+            body: testFormData as any,
+            headers: {
+              ...testFormData.getHeaders(),
+            },
           });
-          const testText = await webhookResponse.text().catch(() => '');
-          console.log('Resposta webhook teste:', webhookResponse.status, testText);
+
+          let testResponseText = '';
+          try {
+            testResponseText = await webhookResponse.text();
+          } catch (readError) {
+            console.error('Error reading test webhook response:', readError);
+          }
+          
+          console.log('Webhook test response:', {
+            status: webhookResponse.status,
+            statusText: webhookResponse.statusText,
+            headers: Object.fromEntries(webhookResponse.headers.entries()),
+            body: testResponseText
+          });
         }
 
-        // Se POST falhar, tenta GET (sem arquivos)
+        // If POST still fails, try GET with query parameters (without files)
         if (!webhookResponse.ok && webhookResponse.status === 404) {
           console.log('POST failed, trying GET method...');
           const params = new URLSearchParams();
@@ -152,37 +214,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (description) params.append('description', description);
           if (impactLevel) params.append('impactLevel', impactLevel);
           params.append('feedbackType', feedbackType);
-          if (Array.isArray(files) && files.length > 0) {
-            const fileNames = files.map(file => file.originalname).join(', ');
+          
+          // Add file information if files exist
+          if (Array.isArray(req.files) && req.files.length > 0) {
+            const fileNames = req.files.map(file => file.originalname).join(', ');
             params.append('attachedFiles', fileNames);
-            params.append('fileCount', files.length.toString());
-            console.log(`Note: ${files.length} files attached but cannot be sent via GET: ${fileNames}`);
+            params.append('fileCount', req.files.length.toString());
+            console.log(`Note: ${req.files.length} files attached but cannot be sent via GET: ${fileNames}`);
           }
+          
           const getUrl = `https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c?${params.toString()}`;
+          
           webhookResponse = await fetch(getUrl, {
             method: 'GET',
           });
-          const getText = await webhookResponse.text().catch(() => '');
-          console.log('Resposta webhook GET:', webhookResponse.status, getText);
+
+          const getResponseText = await webhookResponse.text();
+          console.log('Webhook GET response:', webhookResponse.status, getResponseText);
         }
 
-        if (!webhookResponse.ok) {
-          console.log('Webhook response final:', webhookResponse.status);
+        if (webhookResponse.ok) {
+          console.log('✅ Webhook enviado com sucesso!');
         } else {
-          console.log('Webhook enviado com sucesso!');
+          console.log('❌ Webhook final response status:', webhookResponse.status);
         }
+        
       } catch (webhookError) {
-        console.error('Webhook error:', webhookError);
-        // Não falha a requisição se o webhook falhar
+        console.error('❌ Webhook error:', webhookError);
+        // Don't fail the request if webhook fails
       }
 
+      console.log('✅ Returning success response to client');
       res.json({
         message: "Feedback enviado com sucesso!",
         data: feedback
       });
 
     } catch (error) {
-      console.error('Feedback submission error:', error);
+      console.error('❌ Feedback submission error:', error);
       res.status(500).json({
         message: error instanceof Error ? error.message : "Erro interno do servidor"
       });
