@@ -33,6 +33,31 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Webhook debug endpoint
+  app.all("/api/webhook-debug/:method", (req, res) => {
+    console.log('=== WEBHOOK DEBUG ENDPOINT ===');
+    console.log('Method:', req.method);
+    console.log('Params:', req.params);
+    console.log('Query:', req.query);
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+    console.log('Files:', req.files);
+    
+    res.json({
+      success: true,
+      message: 'Debug endpoint received data',
+      data: {
+        method: req.method,
+        params: req.params,
+        query: req.query,
+        headers: req.headers,
+        body: req.body,
+        files: req.files,
+        timestamp: new Date().toISOString()
+      }
+    });
+  });
+
   // Test webhook endpoint for local testing
   app.post("/api/test-webhook", upload.any(), (req, res) => {
     console.log('=== TEST WEBHOOK RECEIVED ===');
@@ -133,13 +158,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filesCount: Array.isArray(req.files) ? req.files.length : 0
       });
 
-            // Send to webhook - using Promise-based approach for better compatibility
+      // Send to webhook - try both endpoints with multiple methods
       try {
-        let webhookResponse;
-        console.log('Attempting to send to production webhook...');
+        let webhookSuccess = false;
+        console.log('Attempting to send to webhook with multiple approaches...');
         
-        // Function to make webhook request with proper promise handling
-        const sendWebhookRequest = (url: string, formData: FormData): Promise<any> => {
+        // Function to make fetch-based POST request
+        const sendFetchRequest = async (url: string, formData: FormData): Promise<any> => {
+          try {
+            const response = await fetch(url, {
+              method: 'POST',
+              body: formData as any,
+              headers: {
+                ...formData.getHeaders(),
+                'User-Agent': 'AutoForm-Webhook/1.0',
+              },
+            });
+
+            let responseText = '';
+            try {
+              responseText = await response.text();
+            } catch (e) {
+              responseText = 'Could not read response';
+            }
+
+            return {
+              ok: response.ok,
+              status: response.status,
+              statusText: response.statusText,
+              body: responseText,
+              headers: Object.fromEntries(response.headers.entries())
+            };
+          } catch (error) {
+            console.error(`Fetch request failed for ${url}:`, error);
+            return {
+              ok: false,
+              status: 0,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            };
+          }
+        };
+
+        // Function to make form-data submit request
+        const sendFormDataRequest = (url: string, formData: FormData): Promise<any> => {
           return new Promise((resolve, reject) => {
             const request = formData.submit(url, (err, res) => {
               if (err) {
@@ -173,81 +234,148 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         };
 
-        // Try production webhook first
-        try {
-          webhookResponse = await sendWebhookRequest(
-            'https://ai.brasengconsultoria.com.br/webhook/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c',
-            formData
-          );
-          
-          console.log('Webhook production response:', {
-            status: webhookResponse.status,
-            statusText: webhookResponse.statusText,
-            headers: webhookResponse.headers,
-            body: webhookResponse.body
-          });
-          
-        } catch (prodError) {
-          console.log('Production webhook failed:', (prodError as Error).message || prodError);
-          webhookResponse = { ok: false, status: 0 };
-        }
+        const webhookUrls = [
+          'https://ai.brasengconsultoria.com.br/webhook/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c',
+          'https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c'
+        ];
 
-        // If production fails, try test endpoint
-        if (!webhookResponse.ok) {
-          console.log('Trying test endpoint...');
+        // Try each webhook URL with different methods
+        for (let i = 0; i < webhookUrls.length && !webhookSuccess; i++) {
+          const url = webhookUrls[i];
+          const urlType = i === 0 ? 'PRODUCTION' : 'TEST';
           
-          // Create new FormData for test endpoint
-          const testFormData = new FormData();
-          testFormData.append('companyName', companyName);
-          if (description) testFormData.append('description', description);
-          if (impactLevel) testFormData.append('impactLevel', impactLevel);
-          testFormData.append('feedbackType', feedbackType);
-          
-          if (Array.isArray(req.files) && req.files.length > 0) {
-            req.files.forEach((file, index) => {
-              if (fs.existsSync(file.path)) {
-                testFormData.append('files', fs.createReadStream(file.path), {
-                  filename: file.originalname,
-                  contentType: file.mimetype,
-                });
-              }
-            });
-          }
+          console.log(`🔄 Trying ${urlType} webhook: ${url}`);
 
+          // Method 1: Try with fetch + FormData
+          console.log(`  Method 1: fetch with FormData`);
           try {
-            webhookResponse = await sendWebhookRequest(
-              'https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c',
-              testFormData
-            );
-            
-            console.log('Webhook test response:', {
-              status: webhookResponse.status,
-              statusText: webhookResponse.statusText,
-              headers: webhookResponse.headers,
-              body: webhookResponse.body
+            const fetchResult = await sendFetchRequest(url, formData);
+            console.log(`  ${urlType} fetch result:`, {
+              status: fetchResult.status,
+              ok: fetchResult.ok,
+              body: fetchResult.body?.substring(0, 200) // First 200 chars
             });
+
+            if (fetchResult.ok) {
+              console.log(`✅ SUCCESS with ${urlType} webhook using fetch!`);
+              webhookSuccess = true;
+              break;
+            }
+          } catch (fetchError) {
+            console.error(`  ${urlType} fetch failed:`, fetchError);
+          }
+
+          // Method 2: Try with form-data submit
+          if (!webhookSuccess) {
+            console.log(`  Method 2: form-data submit`);
             
-          } catch (testError) {
-            console.log('Test webhook failed:', (testError as Error).message || testError);
-            webhookResponse = { ok: false, status: 0 };
+            // Create fresh FormData for form-data submit
+            const freshFormData = new FormData();
+            freshFormData.append('companyName', companyName);
+            if (description) freshFormData.append('description', description);
+            if (impactLevel) freshFormData.append('impactLevel', impactLevel);
+            freshFormData.append('feedbackType', feedbackType);
+            
+            if (Array.isArray(req.files) && req.files.length > 0) {
+              req.files.forEach((file, index) => {
+                if (fs.existsSync(file.path)) {
+                  freshFormData.append('files', fs.createReadStream(file.path), {
+                    filename: file.originalname,
+                    contentType: file.mimetype,
+                  });
+                }
+              });
+            }
+
+            try {
+              const formDataResult = await sendFormDataRequest(url, freshFormData);
+              console.log(`  ${urlType} form-data result:`, {
+                status: formDataResult.status,
+                ok: formDataResult.ok,
+                body: formDataResult.body?.substring(0, 200)
+              });
+
+              if (formDataResult.ok) {
+                console.log(`✅ SUCCESS with ${urlType} webhook using form-data!`);
+                webhookSuccess = true;
+                break;
+              }
+            } catch (formDataError) {
+              console.error(`  ${urlType} form-data failed:`, formDataError);
+            }
+          }
+
+          // Method 3: Try with JSON payload (no files, but URLs to files)
+          if (!webhookSuccess) {
+            console.log(`  Method 3: JSON payload`);
+            try {
+              const jsonData = {
+                companyName,
+                description: description || '',
+                impactLevel: impactLevel || '',
+                feedbackType,
+                timestamp: new Date().toISOString(),
+                source: 'AutoForm-Webhook',
+                hasFiles: Array.isArray(req.files) && req.files.length > 0,
+                fileCount: Array.isArray(req.files) ? req.files.length : 0,
+                files: Array.isArray(req.files) ? req.files.map(file => ({
+                  originalName: file.originalname,
+                  size: file.size,
+                  type: file.mimetype,
+                  url: `${req.protocol}://${req.get('host')}/uploads/${file.filename}`
+                })) : []
+              };
+
+              const jsonResponse = await fetch(url, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'User-Agent': 'AutoForm-Webhook/1.0',
+                },
+                body: JSON.stringify(jsonData),
+              });
+
+              const jsonResponseText = await jsonResponse.text().catch(() => 'Could not read JSON response');
+              console.log(`  ${urlType} JSON result:`, {
+                status: jsonResponse.status,
+                ok: jsonResponse.ok,
+                body: jsonResponseText.substring(0, 200)
+              });
+
+              if (jsonResponse.ok) {
+                console.log(`✅ SUCCESS with ${urlType} webhook using JSON!`);
+                webhookSuccess = true;
+                break;
+              }
+            } catch (jsonError) {
+              console.error(`  ${urlType} JSON failed:`, jsonError);
+            }
           }
         }
 
-        // If POST still fails, try GET with query parameters (without files)
-        if (!webhookResponse.ok && webhookResponse.status === 404) {
-          console.log('POST failed, trying GET method...');
+        // Final fallback: GET method to test endpoint only
+        if (!webhookSuccess) {
+          console.log('🔄 Final fallback: GET method to test endpoint');
           const params = new URLSearchParams();
           params.append('companyName', companyName);
           if (description) params.append('description', description);
           if (impactLevel) params.append('impactLevel', impactLevel);
           params.append('feedbackType', feedbackType);
+          params.append('timestamp', new Date().toISOString());
+          params.append('source', 'AutoForm-Webhook-GET-Fallback');
           
           // Add file information if files exist
           if (Array.isArray(req.files) && req.files.length > 0) {
             const fileNames = req.files.map(file => file.originalname).join(', ');
-            params.append('attachedFiles', fileNames);
+            const fileUrls = req.files.map(file => `${req.protocol}://${req.get('host')}/uploads/${file.filename}`).join('|');
+            params.append('hasFiles', 'true');
             params.append('fileCount', req.files.length.toString());
-            console.log(`Note: ${req.files.length} files attached but cannot be sent via GET: ${fileNames}`);
+            params.append('fileNames', fileNames);
+            params.append('fileUrls', fileUrls);
+            console.log(`📎 ${req.files.length} files - URLs: ${fileUrls}`);
+          } else {
+            params.append('hasFiles', 'false');
+            params.append('fileCount', '0');
           }
           
           const getUrl = `https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c?${params.toString()}`;
@@ -255,32 +383,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
           try {
             const getResponse = await fetch(getUrl, {
               method: 'GET',
+              headers: {
+                'User-Agent': 'AutoForm-Webhook/1.0',
+              }
             });
 
-            const getResponseText = await getResponse.text();
-            console.log('Webhook GET response:', {
+            const getResponseText = await getResponse.text().catch(() => 'Could not read GET response');
+            console.log('GET fallback result:', {
               status: getResponse.status,
-              body: getResponseText
+              ok: getResponse.ok,
+              body: getResponseText.substring(0, 200)
             });
             
-            webhookResponse = {
-              ok: getResponse.ok,
-              status: getResponse.status
-            };
+            if (getResponse.ok) {
+              console.log('✅ SUCCESS with GET fallback (files accessible via URLs)!');
+              webhookSuccess = true;
+            }
           } catch (getError) {
-            console.log('GET webhook failed:', (getError as Error).message || getError);
+            console.error('GET fallback failed:', getError);
           }
         }
 
-        if (webhookResponse.ok) {
-          console.log('✅ Webhook enviado com sucesso!');
+        if (webhookSuccess) {
+          console.log('🎉 Webhook delivered successfully using one of the methods!');
         } else {
-          console.log('❌ Webhook final response status:', webhookResponse.status);
+          console.log('❌ All webhook delivery methods failed for both endpoints');
         }
         
       } catch (webhookError) {
-        console.error('❌ Webhook error:', (webhookError as Error).message || webhookError);
-        // Don't fail the request if webhook fails
+        console.error('❌ General webhook error:', webhookError);
       }
 
       console.log('✅ Returning success response to client');
