@@ -158,156 +158,162 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filesCount: Array.isArray(req.files) ? req.files.length : 0
       });
 
-      // Send to webhook - try both endpoints with multiple methods
+      // Send to webhook - POST first, TEST environment first
       try {
         let webhookSuccess = false;
-        console.log('Attempting to send to webhook with multiple approaches...');
+        console.log('🚀 Starting webhook delivery - POST method priority, TEST environment first...');
         
-        // Function to make fetch-based POST request
-        const sendFetchRequest = async (url: string, formData: FormData): Promise<any> => {
-          try {
-            const response = await fetch(url, {
-              method: 'POST',
-              body: formData as any,
-              headers: {
-                ...formData.getHeaders(),
-                'User-Agent': 'AutoForm-Webhook/1.0',
-              },
-            });
-
-            let responseText = '';
-            try {
-              responseText = await response.text();
-            } catch (e) {
-              responseText = 'Could not read response';
-            }
-
-            return {
-              ok: response.ok,
-              status: response.status,
-              statusText: response.statusText,
-              body: responseText,
-              headers: Object.fromEntries(response.headers.entries())
-            };
-          } catch (error) {
-            console.error(`Fetch request failed for ${url}:`, error);
-            return {
-              ok: false,
-              status: 0,
-              error: error instanceof Error ? error.message : 'Unknown error'
-            };
-          }
-        };
-
-        // Function to make form-data submit request
-        const sendFormDataRequest = (url: string, formData: FormData): Promise<any> => {
-          return new Promise((resolve, reject) => {
-            const request = formData.submit(url, (err, res) => {
-              if (err) {
-                reject(err);
-                return;
-              }
-              
-              let responseData = '';
-              res.on('data', (chunk) => {
-                responseData += chunk;
-              });
-              
-              res.on('end', () => {
-                resolve({
-                  status: res.statusCode || 0,
-                  statusText: res.statusMessage || '',
-                  headers: res.headers,
-                  body: responseData,
-                  ok: (res.statusCode || 0) >= 200 && (res.statusCode || 0) < 300
-                });
-              });
-              
-              res.on('error', (error) => {
-                reject(error);
-              });
-            });
-            
-            request.on('error', (error) => {
-              reject(error);
-            });
-          });
-        };
-
         const webhookUrls = [
-          'https://ai.brasengconsultoria.com.br/webhook/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c',
-          'https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c'
+          'https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c', // TEST FIRST
+          'https://ai.brasengconsultoria.com.br/webhook/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c'     // PRODUCTION SECOND
         ];
 
-        // Try each webhook URL with different methods
+        // Try POST method for both endpoints first
         for (let i = 0; i < webhookUrls.length && !webhookSuccess; i++) {
           const url = webhookUrls[i];
-          const urlType = i === 0 ? 'PRODUCTION' : 'TEST';
+          const urlType = i === 0 ? 'TEST' : 'PRODUCTION';
           
-          console.log(`🔄 Trying ${urlType} webhook: ${url}`);
+          console.log(`\n🔄 === TRYING ${urlType} WEBHOOK ===`);
+          console.log(`URL: ${url}`);
 
-          // Method 1: Try with fetch + FormData
-          console.log(`  Method 1: fetch with FormData`);
+          // POST Method 1: Try with form-data submit (most compatible with multipart)
+          console.log(`📡 POST Method 1: form-data submit`);
           try {
-            const fetchResult = await sendFetchRequest(url, formData);
-            console.log(`  ${urlType} fetch result:`, {
-              status: fetchResult.status,
-              ok: fetchResult.ok,
-              body: fetchResult.body?.substring(0, 200) // First 200 chars
-            });
-
-            if (fetchResult.ok) {
-              console.log(`✅ SUCCESS with ${urlType} webhook using fetch!`);
-              webhookSuccess = true;
-              break;
-            }
-          } catch (fetchError) {
-            console.error(`  ${urlType} fetch failed:`, fetchError);
-          }
-
-          // Method 2: Try with form-data submit
-          if (!webhookSuccess) {
-            console.log(`  Method 2: form-data submit`);
-            
-            // Create fresh FormData for form-data submit
-            const freshFormData = new FormData();
-            freshFormData.append('companyName', companyName);
-            if (description) freshFormData.append('description', description);
-            if (impactLevel) freshFormData.append('impactLevel', impactLevel);
-            freshFormData.append('feedbackType', feedbackType);
+            // Create fresh FormData for each attempt
+            const postFormData = new FormData();
+            postFormData.append('companyName', companyName);
+            if (description) postFormData.append('description', description);
+            if (impactLevel) postFormData.append('impactLevel', impactLevel);
+            postFormData.append('feedbackType', feedbackType);
+            postFormData.append('timestamp', new Date().toISOString());
+            postFormData.append('source', `AutoForm-POST-${urlType}`);
             
             if (Array.isArray(req.files) && req.files.length > 0) {
+              console.log(`📎 Adding ${req.files.length} files to FormData...`);
               req.files.forEach((file, index) => {
                 if (fs.existsSync(file.path)) {
-                  freshFormData.append('files', fs.createReadStream(file.path), {
+                  postFormData.append('files', fs.createReadStream(file.path), {
                     filename: file.originalname,
                     contentType: file.mimetype,
                   });
+                  console.log(`  ✓ File ${index + 1}: ${file.originalname} (${file.size} bytes)`);
+                } else {
+                  console.error(`  ❌ File ${index + 1} not found: ${file.path}`);
                 }
               });
             }
 
+            // Use form-data submit method
+            const formDataResult = await new Promise<any>((resolve, reject) => {
+              const request = postFormData.submit(url, (err, res) => {
+                if (err) {
+                  reject(err);
+                  return;
+                }
+                
+                let responseData = '';
+                res.on('data', (chunk) => {
+                  responseData += chunk;
+                });
+                
+                res.on('end', () => {
+                  resolve({
+                    status: res.statusCode || 0,
+                    statusText: res.statusMessage || '',
+                    headers: res.headers,
+                    body: responseData,
+                    ok: (res.statusCode || 0) >= 200 && (res.statusCode || 0) < 300
+                  });
+                });
+                
+                res.on('error', (error) => {
+                  reject(error);
+                });
+              });
+              
+              request.on('error', (error) => {
+                reject(error);
+              });
+            });
+
+            console.log(`� ${urlType} form-data POST result:`, {
+              status: formDataResult.status,
+              ok: formDataResult.ok,
+              bodyPreview: formDataResult.body?.substring(0, 300)
+            });
+
+            if (formDataResult.ok) {
+              console.log(`🎉 SUCCESS! ${urlType} webhook received POST with form-data!`);
+              webhookSuccess = true;
+              break;
+            } else {
+              console.log(`❌ ${urlType} form-data POST failed with status: ${formDataResult.status}`);
+            }
+          } catch (formDataError) {
+            console.error(`❌ ${urlType} form-data POST error:`, (formDataError as Error).message);
+          }
+
+          // POST Method 2: Try with fetch + FormData (if method 1 failed)
+          if (!webhookSuccess) {
+            console.log(`📡 POST Method 2: fetch with FormData`);
             try {
-              const formDataResult = await sendFormDataRequest(url, freshFormData);
-              console.log(`  ${urlType} form-data result:`, {
-                status: formDataResult.status,
-                ok: formDataResult.ok,
-                body: formDataResult.body?.substring(0, 200)
+              // Create another fresh FormData
+              const fetchFormData = new FormData();
+              fetchFormData.append('companyName', companyName);
+              if (description) fetchFormData.append('description', description);
+              if (impactLevel) fetchFormData.append('impactLevel', impactLevel);
+              fetchFormData.append('feedbackType', feedbackType);
+              fetchFormData.append('timestamp', new Date().toISOString());
+              fetchFormData.append('source', `AutoForm-FETCH-${urlType}`);
+              
+              if (Array.isArray(req.files) && req.files.length > 0) {
+                req.files.forEach((file, index) => {
+                  if (fs.existsSync(file.path)) {
+                    fetchFormData.append('files', fs.createReadStream(file.path), {
+                      filename: file.originalname,
+                      contentType: file.mimetype,
+                    });
+                  }
+                });
+              }
+
+              const fetchResponse = await fetch(url, {
+                method: 'POST',
+                body: fetchFormData as any,
+                headers: {
+                  ...fetchFormData.getHeaders(),
+                  'User-Agent': 'AutoForm-Webhook/2.0',
+                },
               });
 
-              if (formDataResult.ok) {
-                console.log(`✅ SUCCESS with ${urlType} webhook using form-data!`);
+              let fetchResponseText = '';
+              try {
+                fetchResponseText = await fetchResponse.text();
+              } catch (e) {
+                fetchResponseText = 'Could not read response';
+              }
+
+              console.log(`📥 ${urlType} fetch POST result:`, {
+                status: fetchResponse.status,
+                ok: fetchResponse.ok,
+                bodyPreview: fetchResponseText.substring(0, 300)
+              });
+
+              if (fetchResponse.ok) {
+                console.log(`🎉 SUCCESS! ${urlType} webhook received POST with fetch!`);
                 webhookSuccess = true;
                 break;
+              } else {
+                console.log(`❌ ${urlType} fetch POST failed with status: ${fetchResponse.status}`);
               }
-            } catch (formDataError) {
-              console.error(`  ${urlType} form-data failed:`, formDataError);
+            } catch (fetchError) {
+              console.error(`❌ ${urlType} fetch POST error:`, (fetchError as Error).message);
             }
           }
 
-          // Method 3: Try with JSON payload (no files, but URLs to files)
+          // POST Method 3: Try with JSON payload (no files, but file URLs)
           if (!webhookSuccess) {
-            console.log(`  Method 3: JSON payload`);
+            console.log(`📡 POST Method 3: JSON payload`);
             try {
               const jsonData = {
                 companyName,
@@ -315,7 +321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 impactLevel: impactLevel || '',
                 feedbackType,
                 timestamp: new Date().toISOString(),
-                source: 'AutoForm-Webhook',
+                source: `AutoForm-JSON-${urlType}`,
                 hasFiles: Array.isArray(req.files) && req.files.length > 0,
                 fileCount: Array.isArray(req.files) ? req.files.length : 0,
                 files: Array.isArray(req.files) ? req.files.map(file => ({
@@ -330,39 +336,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
-                  'User-Agent': 'AutoForm-Webhook/1.0',
+                  'User-Agent': 'AutoForm-Webhook/2.0',
                 },
                 body: JSON.stringify(jsonData),
               });
 
               const jsonResponseText = await jsonResponse.text().catch(() => 'Could not read JSON response');
-              console.log(`  ${urlType} JSON result:`, {
+              console.log(`📥 ${urlType} JSON POST result:`, {
                 status: jsonResponse.status,
                 ok: jsonResponse.ok,
-                body: jsonResponseText.substring(0, 200)
+                bodyPreview: jsonResponseText.substring(0, 300)
               });
 
               if (jsonResponse.ok) {
-                console.log(`✅ SUCCESS with ${urlType} webhook using JSON!`);
+                console.log(`🎉 SUCCESS! ${urlType} webhook received POST with JSON!`);
                 webhookSuccess = true;
                 break;
+              } else {
+                console.log(`❌ ${urlType} JSON POST failed with status: ${jsonResponse.status}`);
               }
             } catch (jsonError) {
-              console.error(`  ${urlType} JSON failed:`, jsonError);
+              console.error(`❌ ${urlType} JSON POST error:`, (jsonError as Error).message);
             }
           }
+
+          console.log(`❌ All POST methods failed for ${urlType} webhook`);
         }
 
-        // Final fallback: GET method to test endpoint only
+        // Only try GET as absolute last resort if ALL POST methods failed
         if (!webhookSuccess) {
-          console.log('🔄 Final fallback: GET method to test endpoint');
+          console.log('\n🔄 === FINAL FALLBACK: GET METHOD ===');
+          console.log('⚠️  Note: GET cannot send files, only metadata');
+          
           const params = new URLSearchParams();
           params.append('companyName', companyName);
           if (description) params.append('description', description);
           if (impactLevel) params.append('impactLevel', impactLevel);
           params.append('feedbackType', feedbackType);
           params.append('timestamp', new Date().toISOString());
-          params.append('source', 'AutoForm-Webhook-GET-Fallback');
+          params.append('source', 'AutoForm-GET-Fallback');
           
           // Add file information if files exist
           if (Array.isArray(req.files) && req.files.length > 0) {
@@ -372,7 +384,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             params.append('fileCount', req.files.length.toString());
             params.append('fileNames', fileNames);
             params.append('fileUrls', fileUrls);
-            console.log(`📎 ${req.files.length} files - URLs: ${fileUrls}`);
+            console.log(`📎 Files available at URLs: ${fileUrls}`);
           } else {
             params.append('hasFiles', 'false');
             params.append('fileCount', '0');
@@ -381,37 +393,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const getUrl = `https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c?${params.toString()}`;
           
           try {
+            console.log(`📡 Sending GET request to: ${getUrl.substring(0, 100)}...`);
             const getResponse = await fetch(getUrl, {
               method: 'GET',
               headers: {
-                'User-Agent': 'AutoForm-Webhook/1.0',
+                'User-Agent': 'AutoForm-Webhook/2.0',
               }
             });
 
             const getResponseText = await getResponse.text().catch(() => 'Could not read GET response');
-            console.log('GET fallback result:', {
+            console.log('📥 GET fallback result:', {
               status: getResponse.status,
               ok: getResponse.ok,
-              body: getResponseText.substring(0, 200)
+              bodyPreview: getResponseText.substring(0, 300)
             });
             
             if (getResponse.ok) {
-              console.log('✅ SUCCESS with GET fallback (files accessible via URLs)!');
+              console.log('✅ GET fallback successful (files accessible via URLs)');
               webhookSuccess = true;
+            } else {
+              console.log(`❌ GET fallback failed with status: ${getResponse.status}`);
             }
           } catch (getError) {
-            console.error('GET fallback failed:', getError);
+            console.error('❌ GET fallback error:', (getError as Error).message);
           }
         }
 
+        // Final status
         if (webhookSuccess) {
-          console.log('🎉 Webhook delivered successfully using one of the methods!');
+          console.log('\n🎉 === WEBHOOK DELIVERY SUCCESSFUL ===');
         } else {
-          console.log('❌ All webhook delivery methods failed for both endpoints');
+          console.log('\n❌ === ALL WEBHOOK METHODS FAILED ===');
+          console.log('⚠️  Data saved locally but webhook notification failed');
         }
         
       } catch (webhookError) {
-        console.error('❌ General webhook error:', webhookError);
+        console.error('❌ Critical webhook error:', webhookError);
       }
 
       console.log('✅ Returning success response to client');
