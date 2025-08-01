@@ -133,257 +133,154 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filesCount: Array.isArray(req.files) ? req.files.length : 0
       });
 
-      // Send to webhook - try multiple approaches
+            // Send to webhook - using Promise-based approach for better compatibility
       try {
         let webhookResponse;
-        let webhookSuccess = false;
-        console.log('Attempting to send to webhook with multiple methods...');
+        console.log('Attempting to send to production webhook...');
         
-        // Method 1: Try POST with multipart/form-data (best for files)
-        console.log('🔄 Method 1: POST with multipart/form-data to production...');
-        try {
-          webhookResponse = await fetch('https://ai.brasengconsultoria.com.br/webhook/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c', {
-            method: 'POST',
-            body: formData as any,
-            headers: {
-              ...formData.getHeaders(),
-            },
+        // Function to make webhook request with proper promise handling
+        const sendWebhookRequest = (url: string, formData: FormData): Promise<any> => {
+          return new Promise((resolve, reject) => {
+            const request = formData.submit(url, (err, res) => {
+              if (err) {
+                reject(err);
+                return;
+              }
+              
+              let responseData = '';
+              res.on('data', (chunk) => {
+                responseData += chunk;
+              });
+              
+              res.on('end', () => {
+                resolve({
+                  status: res.statusCode || 0,
+                  statusText: res.statusMessage || '',
+                  headers: res.headers,
+                  body: responseData,
+                  ok: (res.statusCode || 0) >= 200 && (res.statusCode || 0) < 300
+                });
+              });
+              
+              res.on('error', (error) => {
+                reject(error);
+              });
+            });
+            
+            request.on('error', (error) => {
+              reject(error);
+            });
           });
+        };
 
-          let responseText = '';
-          try {
-            responseText = await webhookResponse.text();
-          } catch (readError) {
-            console.error('Error reading webhook response:', readError);
-          }
+        // Try production webhook first
+        try {
+          webhookResponse = await sendWebhookRequest(
+            'https://ai.brasengconsultoria.com.br/webhook/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c',
+            formData
+          );
           
-          console.log('Webhook production multipart response:', {
+          console.log('Webhook production response:', {
             status: webhookResponse.status,
             statusText: webhookResponse.statusText,
-            body: responseText
+            headers: webhookResponse.headers,
+            body: webhookResponse.body
           });
-
-          if (webhookResponse.ok) {
-            console.log('✅ Success with multipart/form-data POST!');
-            webhookSuccess = true;
-          }
-        } catch (multipartError) {
-          console.error('❌ Multipart POST failed:', multipartError);
+          
+        } catch (prodError) {
+          console.log('Production webhook failed:', (prodError as Error).message || prodError);
+          webhookResponse = { ok: false, status: 0 };
         }
 
-        // Method 2: If multipart failed, try POST with JSON (no files, but include file URLs)
-        if (!webhookSuccess) {
-          console.log('🔄 Method 2: POST with JSON...');
-          try {
-            const jsonData = {
-              companyName,
-              description,
-              impactLevel,
-              feedbackType,
-              timestamp: new Date().toISOString(),
-              hasFiles: Array.isArray(req.files) && req.files.length > 0,
-              fileCount: Array.isArray(req.files) ? req.files.length : 0,
-              files: Array.isArray(req.files) ? req.files.map(file => ({
-                originalName: file.originalname,
-                size: file.size,
-                type: file.mimetype,
-                // Provide public URL to access the file
-                url: `${req.protocol}://${req.get('host')}/uploads/${file.filename}`
-              })) : []
-            };
-
-            webhookResponse = await fetch('https://ai.brasengconsultoria.com.br/webhook/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(jsonData),
+        // If production fails, try test endpoint
+        if (!webhookResponse.ok) {
+          console.log('Trying test endpoint...');
+          
+          // Create new FormData for test endpoint
+          const testFormData = new FormData();
+          testFormData.append('companyName', companyName);
+          if (description) testFormData.append('description', description);
+          if (impactLevel) testFormData.append('impactLevel', impactLevel);
+          testFormData.append('feedbackType', feedbackType);
+          
+          if (Array.isArray(req.files) && req.files.length > 0) {
+            req.files.forEach((file, index) => {
+              if (fs.existsSync(file.path)) {
+                testFormData.append('files', fs.createReadStream(file.path), {
+                  filename: file.originalname,
+                  contentType: file.mimetype,
+                });
+              }
             });
-
-            let jsonResponseText = '';
-            try {
-              jsonResponseText = await webhookResponse.text();
-            } catch (readError) {
-              console.error('Error reading JSON webhook response:', readError);
-            }
-            
-            console.log('Webhook production JSON response:', {
-              status: webhookResponse.status,
-              statusText: webhookResponse.statusText,
-              body: jsonResponseText
-            });
-
-            if (webhookResponse.ok) {
-              console.log('✅ Success with JSON POST!');
-              webhookSuccess = true;
-            }
-          } catch (jsonError) {
-            console.error('❌ JSON POST failed:', jsonError);
           }
-        }
 
-        // Method 3: Try test endpoint with multipart if production failed
-        if (!webhookSuccess) {
-          console.log('🔄 Method 3: POST multipart to test endpoint...');
           try {
-            const testFormData = new FormData();
-            testFormData.append('companyName', companyName);
-            if (description) testFormData.append('description', description);
-            if (impactLevel) testFormData.append('impactLevel', impactLevel);
-            testFormData.append('feedbackType', feedbackType);
+            webhookResponse = await sendWebhookRequest(
+              'https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c',
+              testFormData
+            );
             
-            if (Array.isArray(req.files) && req.files.length > 0) {
-              req.files.forEach((file, index) => {
-                if (fs.existsSync(file.path)) {
-                  testFormData.append('files', fs.createReadStream(file.path), {
-                    filename: file.originalname,
-                    contentType: file.mimetype,
-                  });
-                }
-              });
-            }
-
-            webhookResponse = await fetch('https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c', {
-              method: 'POST',
-              body: testFormData as any,
-              headers: {
-                ...testFormData.getHeaders(),
-              },
-            });
-
-            let testResponseText = '';
-            try {
-              testResponseText = await webhookResponse.text();
-            } catch (readError) {
-              console.error('Error reading test webhook response:', readError);
-            }
-            
-            console.log('Webhook test multipart response:', {
+            console.log('Webhook test response:', {
               status: webhookResponse.status,
               statusText: webhookResponse.statusText,
-              body: testResponseText
+              headers: webhookResponse.headers,
+              body: webhookResponse.body
             });
-
-            if (webhookResponse.ok) {
-              console.log('✅ Success with test endpoint multipart!');
-              webhookSuccess = true;
-            }
+            
           } catch (testError) {
-            console.error('❌ Test multipart POST failed:', testError);
+            console.log('Test webhook failed:', (testError as Error).message || testError);
+            webhookResponse = { ok: false, status: 0 };
           }
         }
 
-        // Method 4: Try test endpoint with JSON
-        if (!webhookSuccess) {
-          console.log('🔄 Method 4: POST JSON to test endpoint...');
-          try {
-            const jsonData = {
-              companyName,
-              description,
-              impactLevel,
-              feedbackType,
-              timestamp: new Date().toISOString(),
-              hasFiles: Array.isArray(req.files) && req.files.length > 0,
-              fileCount: Array.isArray(req.files) ? req.files.length : 0,
-              files: Array.isArray(req.files) ? req.files.map(file => ({
-                originalName: file.originalname,
-                size: file.size,
-                type: file.mimetype,
-                url: `${req.protocol}://${req.get('host')}/uploads/${file.filename}`
-              })) : []
-            };
-
-            webhookResponse = await fetch('https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(jsonData),
-            });
-
-            let testJsonResponseText = '';
-            try {
-              testJsonResponseText = await webhookResponse.text();
-            } catch (readError) {
-              console.error('Error reading test JSON webhook response:', readError);
-            }
-            
-            console.log('Webhook test JSON response:', {
-              status: webhookResponse.status,
-              statusText: webhookResponse.statusText,
-              body: testJsonResponseText
-            });
-
-            if (webhookResponse.ok) {
-              console.log('✅ Success with test endpoint JSON!');
-              webhookSuccess = true;
-            }
-          } catch (testJsonError) {
-            console.error('❌ Test JSON POST failed:', testJsonError);
+        // If POST still fails, try GET with query parameters (without files)
+        if (!webhookResponse.ok && webhookResponse.status === 404) {
+          console.log('POST failed, trying GET method...');
+          const params = new URLSearchParams();
+          params.append('companyName', companyName);
+          if (description) params.append('description', description);
+          if (impactLevel) params.append('impactLevel', impactLevel);
+          params.append('feedbackType', feedbackType);
+          
+          // Add file information if files exist
+          if (Array.isArray(req.files) && req.files.length > 0) {
+            const fileNames = req.files.map(file => file.originalname).join(', ');
+            params.append('attachedFiles', fileNames);
+            params.append('fileCount', req.files.length.toString());
+            console.log(`Note: ${req.files.length} files attached but cannot be sent via GET: ${fileNames}`);
           }
-        }
-
-        // Method 5: Last resort - GET with query parameters (no files, just notification)
-        if (!webhookSuccess) {
-          console.log('🔄 Method 5: GET with query parameters (last resort)...');
+          
+          const getUrl = `https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c?${params.toString()}`;
+          
           try {
-            const params = new URLSearchParams();
-            params.append('companyName', companyName);
-            if (description) params.append('description', description);
-            if (impactLevel) params.append('impactLevel', impactLevel);
-            params.append('feedbackType', feedbackType);
-            params.append('timestamp', new Date().toISOString());
-            
-            // Add file information if files exist
-            if (Array.isArray(req.files) && req.files.length > 0) {
-              const fileNames = req.files.map(file => file.originalname).join(', ');
-              const fileUrls = req.files.map(file => `${req.protocol}://${req.get('host')}/uploads/${file.filename}`).join(', ');
-              params.append('hasFiles', 'true');
-              params.append('fileCount', req.files.length.toString());
-              params.append('fileNames', fileNames);
-              params.append('fileUrls', fileUrls);
-              console.log(`📎 ${req.files.length} files attached - URLs provided in GET request`);
-            } else {
-              params.append('hasFiles', 'false');
-              params.append('fileCount', '0');
-            }
-            
-            const getUrl = `https://ai.brasengconsultoria.com.br/webhook-test/c91109c3-fd7c-4fc7-9d58-8e4c7d6e0e2c?${params.toString()}`;
-            
-            webhookResponse = await fetch(getUrl, {
+            const getResponse = await fetch(getUrl, {
               method: 'GET',
             });
 
-            let getResponseText = '';
-            try {
-              getResponseText = await webhookResponse.text();
-            } catch (readError) {
-              console.error('Error reading GET webhook response:', readError);
-            }
-            
+            const getResponseText = await getResponse.text();
             console.log('Webhook GET response:', {
-              status: webhookResponse.status,
-              statusText: webhookResponse.statusText,
+              status: getResponse.status,
               body: getResponseText
             });
-
-            if (webhookResponse.ok) {
-              console.log('✅ Success with GET method (files accessible via URLs)!');
-              webhookSuccess = true;
-            }
+            
+            webhookResponse = {
+              ok: getResponse.ok,
+              status: getResponse.status
+            };
           } catch (getError) {
-            console.error('❌ GET method failed:', getError);
+            console.log('GET webhook failed:', (getError as Error).message || getError);
           }
         }
 
-        if (webhookSuccess) {
-          console.log('🎉 Webhook delivered successfully!');
+        if (webhookResponse.ok) {
+          console.log('✅ Webhook enviado com sucesso!');
         } else {
-          console.log('❌ All webhook delivery methods failed');
+          console.log('❌ Webhook final response status:', webhookResponse.status);
         }
         
       } catch (webhookError) {
-        console.error('❌ General webhook error:', webhookError);
+        console.error('❌ Webhook error:', (webhookError as Error).message || webhookError);
+        // Don't fail the request if webhook fails
       }
 
       console.log('✅ Returning success response to client');
